@@ -6,20 +6,48 @@ import torchvision
 from torchvision.models.detection import maskrcnn_resnet50_fpn
 from sklearn.metrics import precision_score, recall_score
 from mask_rcnn_train import CocoDataset, get_transform
+from torchvision.transforms import functional as F
+from pycocotools.coco import COCO
 
+class CocoTestDataset(torch.utils.data.Dataset):
+    def __init__(self, root, annFile, transforms=None):
+        self.root = root
+        self.coco = COCO(annFile)
+        self.ids = list(self.coco.imgs.keys())
+        self.cat_id_to_label = {1: 1}
+        for cid in [2, 3, 4, 6, 7, 8]:
+            self.cat_id_to_label[cid] = 2
+        self.transforms = transforms
+        self.target_cat_ids = [1, 2, 3, 4, 6, 7, 8]
+        self.num_classes = 3
+
+    def __getitem__(self, index):
+        coco = self.coco
+        img_id = self.ids[index]
+        path = coco.loadImgs(img_id)[0]['file_name']
+        img_path = os.path.join(self.root, path)
+        img = Image.open(img_path).convert('RGB')
+        if self.transforms:
+            img = self.transforms(img)
+        else:
+            img = F.to_tensor(img)
+        return img, img_id  # 只返回图片和图片ID
+
+    def __len__(self):
+        return len(self.ids)
 # ===================== 路径设置 =====================
 base_dir = os.path.dirname(os.path.abspath(__file__))
-img_dir = os.path.join(base_dir, '数据', 'data', 'coco_data', 'coco2017', 'val2017', 'val2017')
-ann_file = os.path.join(base_dir, '数据', 'data', 'coco_data', 'coco2017', 'annotations', 'instances_val2017.json')
+img_dir = os.path.join(base_dir, 'data', 'coco_data', 'coco2017', 'val2017', 'val2017')
+ann_file = os.path.join(base_dir, 'data', 'coco_data', 'coco2017', 'annotations', 'instances_val2017.json')
 
 # ===================== 加载数据集和模型 =====================
-val_dataset = CocoDataset(root=img_dir, annFile=ann_file, transforms=get_transform(train=False))
+val_dataset = CocoTestDataset(root=img_dir, annFile=ann_file, transforms=get_transform(train=False))
 model = maskrcnn_resnet50_fpn(num_classes=val_dataset.num_classes)
 model.load_state_dict(torch.load(os.path.join(base_dir, 'maskrcnn_model.pth'), map_location='cpu'))
 model.eval()
 
 # ===================== 单张图片推理与可视化 =====================
-img_name = os.listdir(img_dir)[0]  # 默认取第一张
+img_name = os.listdir(img_dir)[0]  # 取第一张
 img_path = os.path.join(img_dir, img_name)
 img = Image.open(img_path).convert('RGB')
 img_tensor = torchvision.transforms.ToTensor()(img)
@@ -83,7 +111,9 @@ for idx in range(num_test):
     with torch.no_grad():
         prediction = model([img_tensor])[0]
     ann_ids = val_dataset.coco.getAnnIds(imgIds=val_dataset.ids[idx])
-    anns = val_dataset.coco.loadAnns(ann_ids)
+
+    anns = [ann for ann in val_dataset.coco.loadAnns(ann_ids) if ann['category_id'] in val_dataset.target_cat_ids]
+
     true_labels = set([val_dataset.cat_id_to_label[ann['category_id']] for ann in anns])
     pred_labels = set()
     for i in range(len(prediction['boxes'])):

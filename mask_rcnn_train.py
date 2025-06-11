@@ -9,6 +9,7 @@ import torchvision.transforms as T # 图像预处理与增强
 from pycocotools.coco import COCO  # COCO 数据集解析工具
 from PIL import Image  # 图像读取与处理
 from sklearn.metrics import precision_score, recall_score  # 精度与召回率评估指标
+from tqdm import tqdm
 
 
 # ======================================函数功能测试======================================
@@ -193,8 +194,8 @@ def train():
     """
     # 路径设置
     base_dir = os.path.dirname(os.path.abspath('mask_rcnn_train.py'))
-    train_img_dir = os.path.join(base_dir, '数据', 'data', 'coco_data', 'coco2017', 'train2017', 'train2017')
-    train_ann_file = os.path.join(base_dir, '数据', 'data', 'coco_data', 'coco2017', 'annotations', 'instances_train2017.json')
+    train_img_dir = os.path.join(base_dir,'data', 'coco_data', 'coco2017', 'train2017', 'train2017')
+    train_ann_file = os.path.join(base_dir, 'data', 'coco_data', 'coco2017', 'annotations', 'instances_train2017.json')
    
     # 创建数据集与Dataloader
     train_dataset = CocoDataset(root=train_img_dir, annFile=train_ann_file, transforms=get_transform())
@@ -206,7 +207,7 @@ def train():
     params = [p for p in model.parameters() if p.requires_grad]
 
     # 使用预训练模型的参数
-    optimizer = torch.optim.SGD(params, lr=0.0005, momentum=0.9, weight_decay=0.0005)
+    optimizer = torch.optim.Adam(params, lr=0.0005, weight_decay=0.0005)
 
     # 只跑一个batch
     # 进入训练模式，仅跑一个 batch 理解流程
@@ -230,7 +231,8 @@ def train():
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0
-        for images, targets in train_loader:
+        # tqdm 包裹 train_loader，显示进度条
+        for images, targets in tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
             images = [img.to(device) for img in images]
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
             loss_dict = model(images, targets)
